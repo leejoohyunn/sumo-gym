@@ -54,25 +54,29 @@ class Edge(object):
 
 
 class Demand(object):
-    def __init__(self, departure, destination):
+    def __init__(self, departure, destination, earliest_time=0, latest_time=180, delivery_id=None):
         self.departure = departure
         self.destination = destination
+        self.earliest_time = earliest_time  # 시간창 시작 (분)
+        self.latest_time = latest_time      # 시간창 종료 (분)
+        self.delivery_id = delivery_id      # 배송지 고유 ID
+        self.is_completed = False           # 배송 완료 여부
 
     def __eq__(self, other):
-        return (self.departure, self.destination) == (
+        return (self.departure, self.destination, self.delivery_id) == (
             other.departure,
             other.destination,
+            other.delivery_id,
         )
 
     def __lt__(self, other):
-        return (self.departure, self.destination) < (other.departure, other.destination)
+        return (self.departure, self.destination, self.delivery_id) < (other.departure, other.destination, other.delivery_id)
 
     def __hash__(self):
         return hash(str(self))
 
     def __repr__(self):
-        return f"demand ({self.departure}, {self.destination})"
-
+        return f"demand ({self.departure}, {self.destination}, tw:[{self.earliest_time}-{self.latest_time}], id:{self.delivery_id})"
 
 class ElectricVehicles(object):
     def __init__(
@@ -113,6 +117,62 @@ class ElectricVehicles(object):
 
     def get_battery_level(self):
         return bisect(self.thresholds, self.battery) - 1
+
+
+class DeliveryTruck(object):
+    def __init__(
+        self,
+        id,
+        speed,
+        indicator,
+        capacity,
+        location=None,
+        cargo_count=0,
+        status=None,
+        current_time=0,
+        start_time=0,
+    ):
+        self.id = id
+        self.speed = speed
+        self.indicator = indicator
+        self.capacity = capacity
+        self.max_cargo = 5  # 고정 적재량
+        
+        self.location = location
+        self.cargo_count = cargo_count
+        self.status = status
+        self.current_time = current_time
+        self.start_time = start_time
+        self.route_history = []
+        self.delivered_items = []
+
+    def __eq__(self, other):
+        return self.id == other.id
+
+    def __lt__(self, other):
+        return self.id < other.id
+
+    def __hash__(self):
+        return hash(str(self))
+
+    def __repr__(self):
+        return f"DeliveryTruck ({self.id}, loc:{self.location}, cargo:{self.cargo_count}/{self.max_cargo}, time:{self.current_time})"
+
+    def can_load_items(self, items_count):
+        return self.cargo_count + items_count <= self.max_cargo
+        
+    def load_items(self, items_count):
+        if self.can_load_items(items_count):
+            self.cargo_count += items_count
+            return True
+        return False
+        
+    def deliver_item(self, delivery_id):
+        if self.cargo_count > 0:
+            self.cargo_count -= 1
+            self.delivered_items.append(delivery_id)
+            return True
+        return False
 
 
 class ChargingStation(object):
@@ -437,3 +497,87 @@ def _generate_initial_cluster(vertices_loc, k):
             )
 
     return initial_clusters
+
+
+# VRPTW 관련 함수들
+class TimeManager:
+    def __init__(self, max_episode_time=180):  # 3시간 = 180분
+        self.max_episode_time = max_episode_time
+        
+    def is_within_time_window(self, current_time, demand):
+        return demand.earliest_time <= current_time <= demand.latest_time
+        
+    def calculate_time_violation_penalty(self, arrival_time, demand):
+        if arrival_time <= demand.latest_time:
+            return 0  # 시간창 내 도착
+        else:
+            return (arrival_time - demand.latest_time) * 10  # 초과 시간 × 10
+            
+    def calculate_delivery_reward(self, arrival_time, demand):
+        if arrival_time <= demand.latest_time:
+            # 시간창 내 배송 완료 보상
+            time_bonus = max(0, (demand.latest_time - arrival_time) / 30)  # 빨리 도착할수록 보너스
+            return 100 + time_bonus
+        else:
+            # 시간창 초과 시 페널티
+            return -50
+            
+    def calculate_travel_time(self, vertices, edges, start_loc, end_loc, speed=30):
+        # speed: km/h, 거리는 km 단위로 가정, 결과는 분 단위
+        distance = dist_between(vertices, edges, start_loc, end_loc)
+        travel_time_hours = distance / speed
+        return travel_time_hours * 60  # 분 단위로 변환
+
+
+def generate_random_time_windows(num_deliveries, max_time=180):
+    """50개 배송지에 대해 랜덤 시간창 생성"""
+    import random
+    time_windows = []
+    
+    # 6개 시간 구간 (30분씩)
+    time_slots = [(0, 30), (30, 60), (60, 90), (90, 120), (120, 150), (150, 180)]
+    
+    for i in range(num_deliveries):
+        # 랜덤하게 시간창 선택 (겹침 허용)
+        slot = random.choice(time_slots)
+        time_windows.append(slot)
+    
+    return time_windows
+
+
+def check_delivery_feasibility(truck, demand, vertices, edges, time_manager):
+    """트럭이 특정 배송지를 방문할 수 있는지 확인"""
+    if truck.cargo_count == 0:
+        return False, "No cargo to deliver"
+        
+    if demand.is_completed:
+        return False, "Already delivered"
+        
+    travel_time = time_manager.calculate_travel_time(
+        vertices, edges, truck.location, demand.destination
+    )
+    arrival_time = truck.current_time + travel_time
+    
+    if arrival_time > time_manager.max_episode_time:
+        return False, "Episode time limit exceeded"
+        
+    return True, "Feasible"
+
+
+def get_available_deliveries(truck, demands, vertices, edges, time_manager):
+    """트럭이 현재 상태에서 갈 수 있는 배송지 목록 반환"""
+    available = []
+    
+    for i, demand in enumerate(demands):
+        feasible, reason = check_delivery_feasibility(truck, demand, vertices, edges, time_manager)
+        if feasible:
+            available.append(i)
+            
+    return available
+
+
+def calculate_hub_return_time(truck_location, hub_location, vertices, edges, speed=30):
+    """허브로 복귀하는데 필요한 시간 계산"""
+    distance = dist_between(vertices, edges, truck_location, hub_location)
+    travel_time_hours = distance / speed
+    return travel_time_hours * 60  # 분 단위

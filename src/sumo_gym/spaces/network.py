@@ -1,6 +1,6 @@
 import numpy as np
 import numpy.typing as npt
-import gym
+import gymnasium as gym
 from typing import Tuple
 
 import sumo_gym.typing

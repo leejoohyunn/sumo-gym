@@ -1,7 +1,7 @@
 from typing import Type, Tuple, Any, List
 import numpy as np
 import numpy.typing as npt
-from gym.spaces import Space
+from gymnasium.spaces import Space
 import sumo_gym
 
 

@@ -1,8 +1,8 @@
-from sumo_gym.envs.fmp import FMP, FMPEnv
+from sumo_gym.envs.fmp import VRPTW, VRPTWEnv
 from typing import Tuple
 
 
-__all__ = ("FMP", "FMPEnv")
+__all__ = ("VRPTW", "VRPTWEnv")
 
 
 def __dir__() -> Tuple[str, ...]:

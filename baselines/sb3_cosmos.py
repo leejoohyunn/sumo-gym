@@ -1,7 +1,7 @@
 import os
 import numpy as np
 import json
-import gym
+import gymnasium as gym
 import random
 
 import sumo_gym
@@ -27,8 +27,9 @@ from statistics import mean
 
 suffix = "-cosmos.json"
 
-env = gym.make(
-    "FMP-v0",
+from sumo_gym.envs.fmp import FMPEnv
+
+env = FMPEnv(
     mode="sumo_config",
     verbose=1,
     sumo_config_path="assets/data/cosmos/cosmos.sumocfg",
@@ -46,13 +47,13 @@ class MADQN(object):
         lr=0.003,
         batch_size=4,
         tau=50,
-        episodes=200,
+        episodes=10,
         gamma=0.95,
         epsilon=1.0,
         decay_period=25,
         decay_rate=0.95,
         min_epsilon=0.01,
-        initial_step=400,
+        initial_step=50,
     ):
         self.env = env
         self.lr = lr
@@ -477,10 +478,10 @@ class MADQN(object):
             )
             loss_mean_reword_lower = {
                 episode: {
-                    "total_mean": cs_mean / self.lower_total_step_cs
-                    + demand_mean / self.lower_total_step_demand,
-                    "demand_mean": demand_mean / self.lower_total_step_demand,
-                    "cs_mean": cs_mean / self.lower_total_step_cs,
+                    "total_mean": (cs_mean / max(self.lower_total_step_cs, 1)
+                    + demand_mean / max(self.lower_total_step_demand, 1)),
+                    "demand_mean": demand_mean / max(self.lower_total_step_demand, 1),
+                    "cs_mean": cs_mean / max(self.lower_total_step_cs, 1),
                 }
             }
             metric = {episode: final_info.__dict__}

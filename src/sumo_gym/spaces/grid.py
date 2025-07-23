@@ -11,7 +11,7 @@ from sumo_gym.utils.fmp_utils import (
     NO_LOADING,
     NO_CHARGING,
 )
-import gym
+import gymnasium as gym
 
 import numpy as np
 import numpy.typing as npt

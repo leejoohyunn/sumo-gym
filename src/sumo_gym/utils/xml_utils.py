@@ -36,6 +36,8 @@ def get_electric_vehicles(flow_xml_tree):
     for vtype_param in vtype_params:
         if vtype_param.attrib["key"] == "maximumBatteryCapacity":
             maxBatteryCap = int(vtype_param.attrib["value"])
+        elif vtype_param.attrib["key"] == "device.battery.capacity":
+            maxBatteryCap = int(vtype_param.attrib["value"])
 
     ev_lst = []
     vehicles = flow_xml_tree.findall(VEHICLE_XML_TAG)
